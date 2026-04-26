@@ -27,19 +27,23 @@ import os
 from collections import defaultdict
 from typing import Dict, List, Tuple
 
-# SLP1 to IAST transliteration
+# SLP1 to IAST transliteration (complete)
 SLP1_TO_IAST = {
-    'a': 'a', 'A': 'ā', 'i': 'i', 'I': 'ī', 'u': 'u', 'U': 'ū',
-    'R': 'ṛ', 'RR': 'ṝ', 'lR': 'ḷ', 'lRR': 'ḹ',
+    # Vowels
+    'a': 'a', 'A': 'ā', 'i': 'i', 'I': 'ī',
+    'u': 'u', 'U': 'ū', 'f': 'ṛ', 'F': 'ṝ',
+    'x': 'ḷ', 'X': 'ḹ',
     'e': 'e', 'E': 'ai', 'o': 'o', 'O': 'au',
+    # Diacritics
     'M': 'ṃ', 'H': 'ḥ',
-    'k': 'k', 'kh': 'kh', 'g': 'g', 'gh': 'gh', 'G': 'ṅ',
-    'c': 'c', 'ch': 'ch', 'j': 'j', 'jh': 'jh', 'J': 'ñ',
-    'w': 'ṭ', 'W': 'ṭh', 'q': 'ḍ', 'Q': 'ḍh', 'R': 'ṇ',
-    't': 't', 'th': 'th', 'd': 'd', 'dh': 'dh', 'n': 'n',
-    'p': 'p', 'ph': 'ph', 'b': 'b', 'bh': 'bh', 'm': 'm',
-    'y': 'y', 'r': 'r', 'l': 'l', 'v': 'v',
-    'S': 'ś', 'z': 'ṣ', 's': 's', 'h': 'h',
+    # Consonants
+    'k': 'k',  'K': 'kh', 'g': 'g',  'G': 'gh', 'N': 'ṅ',
+    'c': 'c',  'C': 'ch', 'j': 'j',  'J': 'jh', 'Y': 'ñ',
+    'w': 'ṭ',  'W': 'ṭh', 'q': 'ḍ',  'Q': 'ḍh', 'R': 'ṇ',
+    't': 't',  'T': 'th', 'd': 'd',  'D': 'dh', 'n': 'n',
+    'p': 'p',  'P': 'ph', 'b': 'b',  'B': 'bh', 'm': 'm',
+    'y': 'y',  'r': 'r',  'l': 'l',  'v': 'v',
+    'S': 'ś',  'z': 'ṣ',  's': 's',  'h': 'h',
 }
 
 def slp1_to_iast(text: str) -> str:
@@ -100,6 +104,12 @@ def parse(csv_path: str) -> Tuple[List[Dict], List[Dict]]:
             number = row['number']
             mode = row['mode']
             voice = row['voice']
+            modification = row.get('modification', '').strip()
+
+            # Skip derived forms (causative, desiderative, intensive, etc.)
+            # Keep only the base verb forms
+            if modification:
+                continue
 
             # Map mode to lakara; skip unknown
             lakara = MODE_TO_LAKARA.get(mode)
@@ -116,11 +126,9 @@ def parse(csv_path: str) -> Tuple[List[Dict], List[Dict]]:
                 continue
             pn_key = f"{person_name}_{number_name}"
 
-            # Use root+vclass+voice as unique verb key
             verb_key = f"{root}|{vclass}|{voice}"
             conjugations[verb_key][lakara][pn_key] = form
 
-            # Source string includes voice to differentiate
             src = f"{root}|{lakara}|{pn_key}|{voice}"
             pairs.append({
                 "source": src,

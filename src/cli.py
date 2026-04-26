@@ -7,7 +7,8 @@ from pathlib import Path
 from typing import Dict
 
 from .model import CharacterTokenizer, load_model, SanskritVerbConjugator
-from .data_generator import build_full_conjugations, iast_to_dev_safe, Lakara, Purusha, Vachana
+from .real_lookup import lookup_verb
+from .data_generator import iast_to_dev_safe
 
 class SanskritConjugator:
     """Main application class for Sanskrit verb conjugation"""
@@ -79,7 +80,19 @@ class SanskritConjugator:
         }
 
     def _conjugate_rule_based(self, verb_stem: str) -> Dict:
-        """Use classical Paninian grammar rules"""
+        """Use authentic Sanskrit Heritage data lookup, fallback to rule-based."""
+        # Try real database first
+        entry = lookup_verb(verb_stem, voice='para')
+        if entry:
+            return {
+                "dhatu_devanagari": iast_to_dev_safe(entry['root']),
+                "dhatu_iast": entry['root'],
+                "pada": entry['pada'],
+                "meaning": "",
+                "conjugations": entry['conjugations'],
+            }
+        # Fallback to approximate Panini rule engine
+        from .data_generator import build_full_conjugations
         return build_full_conjugations(verb_stem)
 
     def print_conjugations(self, conjugations: Dict):
