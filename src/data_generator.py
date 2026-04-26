@@ -437,12 +437,43 @@ def iast_to_dev_safe(iast: str) -> str:
 
 def build_full_conjugations(dhatu: str, pada: str = "parasmaipada",
                           meaning: str = "", translit: str = "") -> Dict:
-    """Build full conjugation table for any dhatu"""
+    """Build full conjugation table for any dhatu
 
+    First tries to look up real data from Sanskrit Heritage dataset.
+    Falls back to rule-based generation if not found.
+    """
+
+    # Try real data first
+    real_data_path = "data/real_conjugations_full.json"
+    if os.path.exists(real_data_path):
+        try:
+            with open(real_data_path, 'r', encoding='utf-8') as f:
+                real_data = json.load(f)
+
+            # Normalize dhatu (strip diacritics, lowercase)
+            dhatu_clean = dhatu.lower().strip()
+
+            # Find matching entries
+            matches = [e for e in real_data if e['root'] == dhatu_clean]
+
+            if matches:
+                # Prefer para (parasmaipada) voice, or first match
+                entry = next((m for m in matches if m['voice'] == 'para'), matches[0])
+                return {
+                    "dhatu_devanagari": iast_to_dev_safe(dhatu_clean),
+                    "dhatu_iast": dhatu_clean,
+                    "pada": entry.get('voice', pada),
+                    "meaning": meaning or "",
+                    "transliteration": translit or dhatu_clean,
+                    "conjugations": entry['conjugations'],
+                }
+        except Exception as e:
+            pass  # Fall through to rule-based
+
+    # Fallback: rule-based generation
     engine = ConjugationEngine()
     normalizer = SanskritNormalizer()
 
-    # Create sensible stem based on pada type
     stem = dhatu
     if pada == "parasmaipada":
         if dhatu.endswith(('k', 'c', 'ṭ', 't', 'p')):
@@ -450,20 +481,17 @@ def build_full_conjugations(dhatu: str, pada: str = "parasmaipada",
         elif dhatu.endswith(('g', 'j', 'ḍ', 'd', 'b')):
             stem = dhatu[:-1] + "ay" if dhatu else dhatu
         elif dhatu:
-            # Add thematic 'a' or internal strengthening
             if dhatu[-1] in 'aāīūṛ':
                 stem = dhatu
             else:
                 stem = dhatu + "a"
 
     results = {}
-
     for lakara in Lakara:
         lakara_results = {}
         for purusha in Purusha:
             for vachana in Vachana:
                 ending = engine.get_ending(lakara, purusha, vachana)
-                # Apply sandhi
                 form = normalizer.apply_sandhi(stem, ending)
                 key = f"{purusha.value}_{vachana.value}"
                 lakara_results[key] = form

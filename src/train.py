@@ -12,6 +12,7 @@ import numpy as np
 
 from model import CharacterTokenizer, SanskritVerbConjugator, VerbConjugationDataset, save_model, load_model
 from data_generator import build_full_conjugations
+from fast_dataset import PreTokenizedDataset
 
 def collate_fn(batch):
     """Custom collate function for padding sequences"""
@@ -69,48 +70,37 @@ def train_model(args):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
 
-    # Initialize tokenizer
-    tokenizer = CharacterTokenizer(max_length=64)
-
-    # Create dataset or generate new data
-    data_file = "data/real_training_pairs.json"
-
-    if not os.path.exists(data_file) or args.regenerate:
-        print("Generating synthetic training data...")
-        from data_generator import generate_dataset, save_dataset, create_training_pairs
-        dataset_raw = generate_dataset(args.num_verbs)
-        pairs = flatten_conjugations_to_pairs(dataset_raw)
-        os.makedirs("data", exist_ok=True)
-        save_dataset(data_file, pairs)
-        print(f"Generated {len(pairs)} training pairs")
-
-    dataset = VerbConjugationDataset(data_file, tokenizer)
-
-    # Split dataset
-    train_size = int(0.8 * len(dataset))
-    val_size = len(dataset) - train_size
-    train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
-
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=args.batch_size,
-        shuffle=True,
-        collate_fn=collate_fn
-    )
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=args.batch_size,
-        shuffle=False,
-        collate_fn=collate_fn
-    )
-
-    print(f"Training samples: {len(train_dataset)}")
-    print(f"Validation samples: {len(val_dataset)}")
+    # Check for pre-tokenized tensors (fast path)
+    tensor_path = "data/real_training_tensors.pt"
+    if os.path.exists(tensor_path) and not args.regenerate:
+        print(f"Loading pre-tokenized tensors from {tensor_path}")
+        dataset = PreTokenizedDataset(tensor_path)
+        # Split
+        train_size = int(0.8 * len(dataset))
+        val_size = len(dataset) - train_size
+        train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+        train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
+        val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False)
+        print(f"Training samples: {len(train_dataset)}  Validation: {len(val_dataset)}")
+    else:
+        # Fallback: use slower JSON-based dataset
+        tokenizer = CharacterTokenizer(max_length=64)
+        data_file = "data/real_training_pairs.json"
+        if not os.path.exists(data_file):
+            raise FileNotFoundError(f"Training data not found: {data_file}. Run build_real_dataset.py first.")
+        dataset = VerbConjugationDataset(data_file, tokenizer)
+        train_size = int(0.8 * len(dataset))
+        val_size = len(dataset) - train_size
+        train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+        train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, collate_fn=collate_fn)
+        val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, collate_fn=collate_fn)
+        print(f"Training samples: {len(train_dataset)}  Validation: {len(val_dataset)}")
 
     # Initialize model
+    tokenizer_temp = CharacterTokenizer(max_length=64)  # for vocab size
     model = SanskritVerbConjugator(
-        src_vocab_size=tokenizer.vocab_size,
-        tgt_vocab_size=tokenizer.vocab_size,
+        src_vocab_size=tokenizer_temp.vocab_size,
+        tgt_vocab_size=tokenizer_temp.vocab_size,
         embed_dim=args.embed_dim,
         hidden_dim=args.hidden_dim,
         num_layers=args.num_layers,
